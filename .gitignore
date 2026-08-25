@@ -1,0 +1,54 @@
+# ---- Go ----
+# Built CLI binary (produced by `go build -o packer .`, and by the test/bench scripts)
+/go/packer
+# Common Go build/test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/go/vendor/
+
+# ---- Python (uv project in py/) ----
+# uv-managed virtualenv (recreate with `uv sync`); uv.lock is committed, not ignored
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# ---- Editors / IDEs ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- OS cruft ----
+.DS_Store
+.AppleDouble
+Thumbs.db
+desktop.ini
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Logs / scratch ----
+*.log
+*.tmp
+
+# ---- packer's own generated output (archives + split parts) ----
+*.pk
+*.pk.[0-9]*

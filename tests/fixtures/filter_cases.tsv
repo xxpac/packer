@@ -1,0 +1,41 @@
+# Shared filter parity table (see SPEC.md section 6).
+# Columns (TAB-separated): include_patterns  exclude_patterns  path  is_dir  expected_keep
+# Multiple patterns in a field are separated by '|'. Empty field = no patterns.
+# is_dir and expected_keep are 0/1.
+#
+# no patterns -> keep everything
+		a/b.txt	0	1
+# simple exclude by extension
+	*.log	x/y.log	0	0
+	*.log	x/y.txt	0	1
+# directory-only pattern
+	build/	build	1	0
+	build/	build	0	1
+# anchored vs unanchored
+	/foo	foo	0	0
+	/foo	sub/foo	0	1
+	foo	sub/foo	0	0
+# ** across directories
+	a/**/b	a/x/y/b	0	0
+	a/**/b	a/b	0	0
+# include allowlist
+*.go		main.go	0	1
+*.go		main.py	0	0
+# exclude beats include
+*.txt	secret.txt	secret.txt	0	0
+*.txt	secret.txt	a.txt	0	1
+# negation within a set re-includes
+	*.log|!keep.log	keep.log	0	1
+	*.log|!keep.log	drop.log	0	0
+# character class
+	[abc].txt	a.txt	0	0
+	[abc].txt	d.txt	0	1
+# single-char wildcard
+	?.txt	a.txt	0	0
+	?.txt	ab.txt	0	1
+# trailing ** matches contents but not the dir itself
+	node_modules/**	node_modules/x/y	0	0
+	node_modules/**	node_modules	1	1
+# leading **/ matches at any depth
+	**/temp	a/b/temp	0	0
+	**/temp	temp	0	0

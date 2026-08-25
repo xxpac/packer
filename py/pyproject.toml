@@ -1,0 +1,20 @@
+[project]
+name = "packer"
+version = "1.0.0"
+description = "Archive, compress, encrypt and split directories (Python implementation, byte-compatible with the Go one)."
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    # Only third-party dependency: AES-256-GCM. The KDF uses stdlib hashlib.scrypt.
+    "cryptography>=43",
+]
+
+[project.scripts]
+packer = "packer.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["packer"]
