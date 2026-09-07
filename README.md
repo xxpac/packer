@@ -115,6 +115,35 @@ only), `*`, `?`, `**`, `[...]` classes, and leading `!` negation. Provide them
 with `--include`/`--exclude` (repeatable) or `--include-from`/`--exclude-from`
 files. See [SPEC.md](SPEC.md) section 6 for exact semantics.
 
+Pass `--names` when your lists name top-level entries rather than paths. Every
+line is then matched against the first path component only, so a directory name
+covers its whole subtree in either direction — no `/` prefix or `/**` suffix to
+get right:
+
+```bash
+# pack only these top-level entries, src/ and docs/ recursively
+printf 'src\ndocs\nREADME.md\n' > keep.txt
+packer pack --names --include-from keep.txt -o out.pk .
+
+# pack everything except these two directories and their contents
+packer pack --names --exclude node_modules --exclude .git -o out.pk .
+```
+
+Lines are shell globs, so `*.log`, `[ab]cd` and `?cd` all work, but they only
+ever match top-level names: `--names --exclude build` drops `./build` while
+keeping `./src/build`, and `--names --exclude '*.log'` drops top-level logs
+without touching `./sub/app.log`.
+
+Because a name list enumerates things you expect to exist, `pack` warns about
+any line that selected nothing, which catches typos and stale entries:
+
+```
+packer: warning: include name "docs" matched nothing
+```
+
+A line containing `/` is rejected outright rather than silently matching
+nothing. See [SPEC.md](SPEC.md) sections 6.4 and 6.5.
+
 ## Cross-compatibility & formats
 
 The container is a stack of self-describing layers so `unpack` needs no flags:

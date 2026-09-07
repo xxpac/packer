@@ -58,7 +58,17 @@ def _build_filter(args):
     exc = list(args.exclude or [])
     for p in (args.exclude_from or []):
         exc += _read_lines(p)
-    return Filter(inc, exc)
+    return Filter(inc, exc, names=getattr(args, "names", False))
+
+
+def _warn_unmatched_names(flt):
+    """Report names-mode lines that selected nothing, which is almost always a
+    typo or a stale entry in a list file. Call once the walk has finished."""
+    for kind, s in (("include", flt.include), ("exclude", flt.exclude)):
+        for name in s.unmatched():
+            sys.stderr.write(
+                'packer: warning: %s name "%s" matched nothing\n' % (kind, name)
+            )
 
 
 def cmd_pack(args):
@@ -83,6 +93,7 @@ def cmd_pack(args):
     top = EncryptWriter(sink, passphrase) if args.encrypt else sink
     gz = compress.gzip_writer(top, args.level)
     archive.create(gz, args.dirs, skip_symlinks=args.skip_symlinks, flt=flt, progress=prog)
+    _warn_unmatched_names(flt)
     gz.close()
     if args.encrypt:
         top.close()
@@ -261,6 +272,9 @@ def build_parser():
     sp.add_argument("--exclude", action="append", default=[])
     sp.add_argument("--include-from", dest="include_from", action="append", default=[])
     sp.add_argument("--exclude-from", dest="exclude_from", action="append", default=[])
+    sp.add_argument("--names", action="store_true",
+                    help="read include/exclude lines as literal top-level entry "
+                         "names; a directory name covers its whole subtree")
     add_pass(sp)
     add_progress(sp)
     add_verbose(sp, "list each top-level entry (dirs show their subtree progress)")

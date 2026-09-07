@@ -31,6 +31,7 @@ func cmdPack(args []string) error {
 	fs.Var(&excludes, "exclude", "exclude pattern, gitignore-style (repeatable)")
 	fs.Var(&includeFrom, "include-from", "read include patterns from file (repeatable)")
 	fs.Var(&excludeFrom, "exclude-from", "read exclude patterns from file (repeatable)")
+	names := fs.Bool("names", false, "read include/exclude lines as literal top-level entry names; a directory name covers its whole subtree")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -48,7 +49,7 @@ func cmdPack(args []string) error {
 		}
 	}
 
-	flt, err := buildFilter(includes, excludes, includeFrom, excludeFrom)
+	flt, err := buildFilter(includes, excludes, includeFrom, excludeFrom, *names)
 	if err != nil {
 		return err
 	}
@@ -117,6 +118,9 @@ func cmdPack(args []string) error {
 		return runErr
 	}
 	meter.Finish()
+	// Safe here: io.Copy above returned on pipe EOF, so the walk goroutine has
+	// finished touching the filter.
+	warnUnmatchedNames(flt)
 
 	if sw != nil {
 		fmt.Fprintf(os.Stderr, "packer: wrote %d part(s): %v\n", len(sw.Parts()), sw.Parts())

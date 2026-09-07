@@ -59,7 +59,9 @@ func readLines(path string) ([]string, error) {
 	return strings.Split(string(data), "\n"), nil
 }
 
-func buildFilter(includes, excludes, includeFrom, excludeFrom []string) (*filter.Filter, error) {
+// buildFilter assembles the two pattern sets. When names is set, every line is
+// read as a literal top-level entry name instead of a gitignore-style pattern.
+func buildFilter(includes, excludes, includeFrom, excludeFrom []string, names bool) (*filter.Filter, error) {
 	incLines := append([]string{}, includes...)
 	for _, f := range includeFrom {
 		lines, err := readLines(f)
@@ -76,15 +78,36 @@ func buildFilter(includes, excludes, includeFrom, excludeFrom []string) (*filter
 		}
 		excLines = append(excLines, lines...)
 	}
-	inc, err := filter.Compile(incLines)
+	compile := filter.Compile
+	if names {
+		compile = filter.CompileNames
+	}
+	inc, err := compile(incLines)
 	if err != nil {
 		return nil, err
 	}
-	exc, err := filter.Compile(excLines)
+	exc, err := compile(excLines)
 	if err != nil {
 		return nil, err
 	}
 	return &filter.Filter{Include: inc, Exclude: exc}, nil
+}
+
+// warnUnmatchedNames reports names-mode lines that selected nothing, which is
+// almost always a typo or a stale entry in a list file. Call it only once the
+// walk has finished.
+func warnUnmatchedNames(flt *filter.Filter) {
+	if flt == nil {
+		return
+	}
+	// Literal quotes rather than %q: skipping the escaping keeps the text
+	// identical to the Python build.
+	for _, n := range flt.Include.Unmatched() {
+		fmt.Fprintf(os.Stderr, "packer: warning: include name \"%s\" matched nothing\n", n)
+	}
+	for _, n := range flt.Exclude.Unmatched() {
+		fmt.Fprintf(os.Stderr, "packer: warning: exclude name \"%s\" matched nothing\n", n)
+	}
 }
 
 // resolvePassphrase resolves the passphrase from a file, the environment, or an

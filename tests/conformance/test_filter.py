@@ -29,11 +29,12 @@ def main():
             if not line.strip() or line.startswith("#"):
                 continue
             cols = line.split("\t")
-            if len(cols) != 5:
-                print("line %d: expected 5 columns, got %d: %r" % (line_no, len(cols), line))
+            if len(cols) not in (5, 6):
+                print("line %d: expected 5 or 6 columns, got %d: %r" % (line_no, len(cols), line))
                 failures += 1
                 continue
-            flt = Filter(pats(cols[0]), pats(cols[1]))
+            names = len(cols) == 6 and cols[5] == "names"
+            flt = Filter(pats(cols[0]), pats(cols[1]), names=names)
             path = cols[2]
             is_dir = cols[3] == "1"
             want = cols[4] == "1"

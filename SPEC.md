@@ -154,6 +154,7 @@ keep     = included AND NOT excluded          # exclude wins ties
 ```
 Pattern sources: `--include`/`--exclude` (repeatable) and
 `--include-from FILE`/`--exclude-from FILE` (one pattern per line, `#` comments).
+`--names` reinterprets all four as literal top-level names; see 6.4.
 
 ### 6.3 Directory pruning
 
@@ -161,12 +162,50 @@ If a directory matches `E` (and is not re-included by a later `!` rule in `E`),
 its entire subtree is skipped; a file under an excluded directory cannot be
 re-included (same rule as git).
 
+### 6.4 Names mode (`--names`)
+
+`--names` restricts the matching of 6.1 to top-level entry names for *both*
+sets: every line is a shell-style glob compared against the first component of
+the path, never the path as a whole. A match therefore covers the entry itself
+and, when it is a directory, its whole subtree — so an included directory is
+archived recursively (its own directory entries included, preserving their
+modes) and an excluded one is dropped whole.
+
+The two-set combination of 6.2 and the pruning of 6.3 are unchanged; only how a
+line is turned into a match differs:
+```
+match(path) = ANY name matches firstComponent(path)
+```
+- Blank lines and `#` comments are skipped, and surrounding whitespace trimmed.
+  Duplicate lines collapse to one.
+- One leading and/or trailing `/` is accepted and stripped, so `build`, `/build`
+  and `build/` are the same name.
+- `*`, `?`, `[...]` (with `!`/`^` negation and ranges) and `\` escaping work as
+  in 6.1 and are compiled by the same translator. Because a name is always a
+  single component, every line is fully anchored and `*` cannot span a `/`.
+- A leading `!` is literal, not negation, and a trailing `/` does not restrict a
+  line to directories: names match files and directories alike.
+- A line that still contains `/` after the above is an error, because it could
+  otherwise only ever match nothing.
+
+### 6.5 Unmatched name reporting
+
+Because names enumerate entries the user expects to exist, `pack` writes one
+advisory line to stderr per names-mode line that selected nothing over the whole
+run (across every input directory), after the archive is complete:
+```
+packer: warning: include name "docs" matched nothing
+packer: warning: exclude name "*.tmp" matched nothing
+```
+Include lines are reported before exclude lines, each in the order given. This
+is advisory only: it never changes the exit status or the bytes written.
+
 ## 7. CLI surface (identical in both implementations)
 
 ```
 packer pack   [-o OUT] [--encrypt] [--split-size SIZE] [--level N]
               [--skip-symlinks] [--include PAT]... [--exclude PAT]...
-              [--include-from FILE]... [--exclude-from FILE]...
+              [--include-from FILE]... [--exclude-from FILE]... [--names]
               [--passphrase-file FILE] [--progress MODE] [-v|--verbose] DIR [DIR...]
 packer unpack [-o DESTDIR] [--overwrite] [--passphrase-file FILE] [--progress MODE] [-v|--verbose] INPUT
 packer encrypt [-o OUT] [--passphrase-file FILE] [--progress MODE] INPUT

@@ -63,16 +63,17 @@ func walkDir(tw *tar.Writer, base, root, disp string, opt Options) error {
 	var (
 		curTop     string
 		curTopDir  bool
+		curTopKept bool // any entry archived from this subtree; a fully filtered-out one is not listed
 		curTopPath string
 		startFiles int64
 		startBytes int64
 	)
 	flushTop := func() {
-		if curTopDir {
+		if curTopDir && curTopKept {
 			f, b := prog.Snapshot()
 			prog.LogDir(curTopPath, f-startFiles, b-startBytes)
 		}
-		curTop, curTopDir = "", false
+		curTop, curTopDir, curTopKept = "", false, false
 	}
 	err := filepath.WalkDir(base, func(path string, de fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -118,6 +119,7 @@ func walkDir(tw *tar.Writer, base, root, disp string, opt Options) error {
 			if err := writeSymlink(tw, path, de, root+"/"+slashRel); err != nil {
 				return err
 			}
+			curTopKept = true
 			prog.AddFile()
 			if isTop {
 				prog.LogFile(curTopPath)
@@ -128,6 +130,7 @@ func walkDir(tw *tar.Writer, base, root, disp string, opt Options) error {
 				if err := writeDir(tw, path, de, root+"/"+slashRel+"/"); err != nil {
 					return err
 				}
+				curTopKept = true
 			}
 			if isTop {
 				curTopDir = true // logged (with subtree delta) once its subtree completes
@@ -140,6 +143,7 @@ func walkDir(tw *tar.Writer, base, root, disp string, opt Options) error {
 			if err := writeReg(tw, path, de, root+"/"+slashRel, prog); err != nil {
 				return err
 			}
+			curTopKept = true
 			prog.AddFile()
 			if isTop {
 				prog.LogFile(curTopPath)

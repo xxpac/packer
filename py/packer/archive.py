@@ -56,8 +56,10 @@ def _add_tree(tf, base, root, skip_symlinks, flt, progress, disp):
 
     def recurse(dirpath, relprefix):
         # Direct children of a command-line target dir are the "top level"
-        # entries reported in verbose mode.
+        # entries reported in verbose mode. Returns whether anything in this
+        # subtree was archived, so a fully filtered-out dir is not listed.
         top_level = relprefix == ""
+        wrote = False
         with os.scandir(dirpath) as it:
             entries = sorted(it, key=lambda e: e.name)
         for e in entries:
@@ -69,6 +71,7 @@ def _add_tree(tf, base, root, skip_symlinks, flt, progress, disp):
                 if flt is not None and not flt.keep(rel, False):
                     continue
                 _add_entry(tf, e.path, arc, progress)
+                wrote = True
                 if top_level:
                     progress.log_file(_join_display(disp, e.name))
                 continue
@@ -76,12 +79,16 @@ def _add_tree(tf, base, root, skip_symlinks, flt, progress, disp):
                 if flt is not None and flt.excludes_dir(rel):
                     continue
                 f0, b0 = progress.snapshot()
-                if flt is None or flt.keep(rel, True):
+                kept = flt is None or flt.keep(rel, True)
+                if kept:
                     _add_entry(tf, e.path, arc, progress)
-                recurse(e.path, rel)
-                if top_level:
-                    f1, b1 = progress.snapshot()
-                    progress.log_dir(_join_display(disp, e.name), f1 - f0, b1 - b0)
+                if recurse(e.path, rel) or kept:
+                    wrote = True
+                    if top_level:
+                        f1, b1 = progress.snapshot()
+                        progress.log_dir(
+                            _join_display(disp, e.name), f1 - f0, b1 - b0
+                        )
                 continue
             if not e.is_file(follow_symlinks=False):
                 sys.stderr.write("packer: skipping special file %s\n" % rel)
@@ -89,8 +96,10 @@ def _add_tree(tf, base, root, skip_symlinks, flt, progress, disp):
             if flt is not None and not flt.keep(rel, False):
                 continue
             _add_entry(tf, e.path, arc, progress)
+            wrote = True
             if top_level:
                 progress.log_file(_join_display(disp, e.name))
+        return wrote
 
     recurse(base, "")
 

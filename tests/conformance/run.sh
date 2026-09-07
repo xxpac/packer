@@ -139,6 +139,136 @@ cmp -s src/sub/deeper/big.bin gsp.out && ok "go split -> py merge" || bad "go sp
 PY split --split-size 5555 -o psp src/sub/deeper/big.bin >/dev/null && GO merge -o psp.out psp.001 >/dev/null
 cmp -s src/sub/deeper/big.bin psp.out && ok "py split -> go merge" || bad "py split -> go merge"
 
+# ---- verbose listing vs. the filter (SPEC 7.2) ----
+echo "== verbose listing =="
+
+vraw() { # RUN args... -> the per-entry verbose lines for `pack ... src`
+  local run="$1"; shift
+  rm -f v.pk
+  # The final summary is drawn with a leading CR and carries a timing-dependent
+  # rate, so strip it (and the output-path line) before comparing.
+  "$run" pack --progress off -v -o v.pk "$@" src 2>&1 | tr -d '\r' |
+    grep -v -e '^packer: packed ' -e '^packer: wrote '
+}
+
+check_verbose() { # label expected_paths args...
+  local label="$1" want="$2"; shift 2
+  local g p got
+  g="$(vraw GO "$@")"
+  p="$(vraw PY "$@")"
+  got="$(printf '%s\n' "$g" | sed -n 's|^packer: \(src/[^ ]*\).*|\1|p')"
+  if [ "$got" = "$want" ]; then
+    ok "verbose listing: $label"
+  else
+    echo "  ---- expected vs listed: $label ----"
+    diff <(printf '%s\n' "$want") <(printf '%s\n' "$got")
+    bad "verbose listing: $label"
+  fi
+  if [ "$g" = "$p" ]; then
+    ok "verbose parity: $label"
+  else
+    echo "  ---- go vs py verbose text: $label ----"
+    diff <(printf '%s\n' "$g") <(printf '%s\n' "$p")
+    bad "verbose parity: $label"
+  fi
+}
+
+check_verbose "no filter" \
+"src/a.txt
+src/build
+src/empty.txt
+src/empty_dir
+src/sub"
+
+# A dir whose whole subtree the include set drops must not be listed, while one
+# that contributes only through its contents (its own entry dropped) must be.
+check_verbose "include subtree" \
+"src/sub" --include 'sub/**'
+
+# A kept directory is listed even when it archives no files of its own.
+check_verbose "include empty dir" \
+"src/empty_dir" --include 'empty_dir/'
+
+check_verbose "exclude dir" \
+"src/a.txt
+src/empty.txt
+src/empty_dir
+src/sub" --exclude 'build/'
+
+# ---- names mode (SPEC 6.4) ----
+echo "== names mode =="
+for impl in go py; do
+  case "$impl" in
+    go) RUN=GO ;;
+    py) RUN=PY ;;
+  esac
+
+  # An included directory name pulls in its whole subtree, dir entries (and so
+  # their modes) included.
+  rm -rf n.pk* out
+  "$RUN" pack --names --include sub -o n.pk src >/dev/null
+  "$RUN" unpack -o out "$(input_arg n.pk)" >/dev/null
+  check_tree src/sub out/src/sub "$impl names include (whole subtree)"
+  if [ ! -e out/src/a.txt ] && [ ! -e out/src/build ]; then
+    ok "$impl names include (unlisted entries dropped)"
+  else
+    bad "$impl names include (unlisted entries dropped)"
+  fi
+
+  # An excluded directory name removes the whole subtree.
+  rm -rf n.pk* out
+  "$RUN" pack --names --exclude build --exclude sub -o n.pk src >/dev/null
+  "$RUN" unpack -o out "$(input_arg n.pk)" >/dev/null
+  if [ ! -e out/src/build ] && [ ! -e out/src/sub ] &&
+     [ -e out/src/a.txt ] && [ -e out/src/empty_dir ]; then
+    ok "$impl names exclude (whole subtree)"
+  else
+    bad "$impl names exclude (whole subtree)"
+  fi
+
+  # A path rather than a bare name is rejected instead of silently matching
+  # nothing, which is the mistake this mode exists to prevent.
+  rm -rf n.pk*
+  if "$RUN" pack --names --include sub/deeper -o n.pk src >/dev/null 2>&1; then
+    bad "$impl names rejects a path"
+  else
+    ok "$impl names rejects a path"
+  fi
+
+  # Names take shell globs, matched against top-level entries only.
+  rm -rf n.pk* out
+  "$RUN" pack --names --include '*.txt' -o n.pk src >/dev/null
+  "$RUN" unpack -o out "$(input_arg n.pk)" >/dev/null
+  if [ -e out/src/a.txt ] && [ -e out/src/empty.txt ] && [ ! -e out/src/sub ]; then
+    ok "$impl names glob"
+  else
+    bad "$impl names glob"
+  fi
+
+  # A name that selects nothing is reported rather than silently ignored.
+  rm -rf n.pk*
+  got="$("$RUN" pack --names --include sub --include nope --exclude alsonope \
+          -o n.pk src 2>&1 >/dev/null | tr -d '\r' | grep 'matched nothing')"
+  want='packer: warning: include name "nope" matched nothing
+packer: warning: exclude name "alsonope" matched nothing'
+  if [ "$got" = "$want" ]; then
+    ok "$impl names warns on unmatched"
+  else
+    echo "  ---- unmatched-name warnings: $impl ----"
+    diff <(printf '%s\n' "$want") <(printf '%s\n' "$got")
+    bad "$impl names warns on unmatched"
+  fi
+
+  # A name that does match must stay quiet.
+  rm -rf n.pk*
+  if [ -z "$("$RUN" pack --names --include sub -o n.pk src 2>&1 >/dev/null |
+             grep 'matched nothing')" ]; then
+    ok "$impl names quiet when matched"
+  else
+    bad "$impl names quiet when matched"
+  fi
+done
+
 # ---- filter parity ----
 echo "== filter parity table =="
 if ( cd "$REPO/go" && go test ./internal/filter/ -run TestFilterParity >/dev/null 2>&1 ); then

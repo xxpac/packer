@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -12,10 +13,22 @@ type pattern struct {
 	dirOnly bool
 }
 
-// Set is an ordered list of patterns evaluated with last-match-wins semantics.
+// A namePattern is one compiled names-mode line, matched against a top-level
+// entry name. matched records whether it ever selected anything, so an entry
+// that silently covers nothing can be reported.
+type namePattern struct {
+	src     string
+	re      *regexp.Regexp
+	matched bool
+}
+
+// Set is an ordered list of patterns evaluated with last-match-wins semantics,
+// or, when built by CompileNames, a set of top-level entry name patterns.
 type Set struct {
-	patterns []pattern
-	empty    bool
+	patterns  []pattern
+	names     []namePattern
+	namesMode bool
+	empty     bool
 }
 
 // Empty reports whether the set has no effective patterns.
@@ -61,6 +74,58 @@ func Compile(lines []string) (*Set, error) {
 	return s, nil
 }
 
+// CompileNames builds a Set from top-level entry name patterns. Each line is a
+// shell-style glob matched against a top-level name; a match covers that entry
+// and, when it is a directory, everything beneath it. See SPEC.md section 6.4.
+func CompileNames(lines []string) (*Set, error) {
+	s := &Set{namesMode: true}
+	seen := map[string]bool{}
+	for _, raw := range lines {
+		line := strings.TrimSpace(strings.TrimRight(raw, "\r\n"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// A leading or trailing slash is a harmless way to spell a directory,
+		// so accept it rather than making the user care.
+		line = strings.TrimSuffix(strings.TrimPrefix(line, "/"), "/")
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, "/") {
+			return nil, fmt.Errorf("names mode: %q is not a top-level entry name (it contains %q)", line, "/")
+		}
+		if seen[line] {
+			continue
+		}
+		seen[line] = true
+		// A name is always a whole single component, so anchor it outright
+		// rather than using the depth-dependent anchoring of Compile.
+		body, _ := translate(line)
+		re, err := regexp.Compile("^" + body + "$")
+		if err != nil {
+			return nil, err
+		}
+		s.names = append(s.names, namePattern{src: line, re: re})
+	}
+	s.empty = len(s.names) == 0
+	return s, nil
+}
+
+// Unmatched returns the names-mode lines that never selected an entry, in the
+// order given. It is meaningful only once a walk has finished.
+func (s *Set) Unmatched() []string {
+	if s == nil || !s.namesMode {
+		return nil
+	}
+	var out []string
+	for i := range s.names {
+		if !s.names[i].matched {
+			out = append(out, s.names[i].src)
+		}
+	}
+	return out
+}
+
 func trimTrailingSpaces(s string) string {
 	i := len(s)
 	for i > 0 && s[i-1] == ' ' {
@@ -78,6 +143,23 @@ func trimTrailingSpaces(s string) string {
 func (s *Set) Match(path string, isDir bool) bool {
 	if s == nil {
 		return false
+	}
+	if s.namesMode {
+		// A name covers its whole subtree, so only the first component matters;
+		// files and directories are treated alike. Every hit is recorded, not
+		// just the first, so Unmatched can tell which lines pulled their weight.
+		top := path
+		if i := strings.IndexByte(path, '/'); i >= 0 {
+			top = path[:i]
+		}
+		hit := false
+		for i := range s.names {
+			if s.names[i].re.MatchString(top) {
+				s.names[i].matched = true
+				hit = true
+			}
+		}
+		return hit
 	}
 	matched := false
 	for _, p := range s.patterns {

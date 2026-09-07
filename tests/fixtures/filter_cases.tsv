@@ -1,7 +1,9 @@
 # Shared filter parity table (see SPEC.md section 6).
-# Columns (TAB-separated): include_patterns  exclude_patterns  path  is_dir  expected_keep
+# Columns (TAB-separated): include_patterns  exclude_patterns  path  is_dir  expected_keep  [mode]
 # Multiple patterns in a field are separated by '|'. Empty field = no patterns.
 # is_dir and expected_keep are 0/1.
+# mode is optional: absent/empty = gitignore-style patterns (6.1), "names" =
+# literal top-level entry names (6.4).
 #
 # no patterns -> keep everything
 		a/b.txt	0	1
@@ -39,3 +41,40 @@
 # leading **/ matches at any depth
 	**/temp	a/b/temp	0	0
 	**/temp	temp	0	0
+#
+# ---- names mode (6.4): literal top-level entry names ----
+# an included dir name covers its whole subtree, dir entries included
+proj		proj	1	1	names
+proj		proj/a.txt	0	1	names
+proj		proj/sub	1	1	names
+proj		proj/sub/deep.txt	0	1	names
+# a name matches files and dirs alike
+proj		proj	0	1	names
+# names are top-level only: no matching at depth
+proj		src/proj	1	0	names
+proj		src/proj/nested.txt	0	0	names
+# unlisted top-level entries are dropped
+proj		top.txt	0	0	names
+# an excluded dir name removes the whole subtree, but only at the top level
+	proj	proj/a.txt	0	0	names
+	proj	src/proj/nested.txt	0	1	names
+# exclude still beats include
+proj	proj	proj/a.txt	0	0	names
+# a leading and/or trailing slash is accepted as the same name
+/proj/		proj/a.txt	0	1	names
+# shell globs apply, but only against the top-level name
+*.txt		a.txt	0	1	names
+*.txt		a.md	0	0	names
+*.log		sub/a.log	0	0	names
+	*.log	a.log	0	0	names
+# character class and single-char wildcard
+[ab]cd		acd	1	1	names
+[ab]cd		bcd/f.txt	0	1	names
+[ab]cd		ccd	1	0	names
+?cd		acd	1	1	names
+?cd		abcd	1	0	names
+# a glob that matches a directory still covers its whole subtree
+*cd		acd/deep/f.txt	0	1	names
+# a leading ! is literal here, not negation
+!keep		!keep	0	1	names
+!keep		keep	0	0	names

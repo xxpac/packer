@@ -26,14 +26,18 @@ func TestFilterParity(t *testing.T) {
 			continue
 		}
 		cols := strings.Split(line, "\t")
-		if len(cols) != 5 {
-			t.Fatalf("line %d: expected 5 columns, got %d: %q", lineNo+1, len(cols), line)
+		if len(cols) != 5 && len(cols) != 6 {
+			t.Fatalf("line %d: expected 5 or 6 columns, got %d: %q", lineNo+1, len(cols), line)
 		}
-		inc, err := Compile(pats(cols[0]))
+		compile := Compile
+		if len(cols) == 6 && cols[5] == "names" {
+			compile = CompileNames
+		}
+		inc, err := compile(pats(cols[0]))
 		if err != nil {
 			t.Fatalf("line %d: compile include: %v", lineNo+1, err)
 		}
-		exc, err := Compile(pats(cols[1]))
+		exc, err := compile(pats(cols[1]))
 		if err != nil {
 			t.Fatalf("line %d: compile exclude: %v", lineNo+1, err)
 		}
